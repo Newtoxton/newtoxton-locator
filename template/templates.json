@@ -1,8 +1,8 @@
 {
     "templates": [
         {
-            "name": "NearYou",
-            "dir_name": "nearyou",
+            "name": "NatGeo",
+            "dir_name": "natgeo",
             "module": false,
             "import_file": null
         },
