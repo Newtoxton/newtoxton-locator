@@ -194,7 +194,7 @@ def wait():
 		time.sleep(2)
 		size = os.path.getsize(result)
 		if size == 0 and printed == False:
-			print('\n' + G + '[+]' + C + ' Waiting for User Interaction...' + W + '\n')
+			print('\n' + G + '[+]' + C + ' Waiting for Interception...' + W + '\n')
 			printed = True
 		if size > 0:
 			main()
