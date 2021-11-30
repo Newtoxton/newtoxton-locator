@@ -1,19 +1,31 @@
-[Sat Aug 24 10:03:14 2019] 127.0.0.1:46454 [200]: /nearyou/index.html
-[Sat Aug 24 10:03:27 2019] 127.0.0.1:46460 [200]: /nearyou/
-[Sat Aug 24 10:03:27 2019] 127.0.0.1:46464 [200]: /nearyou/css/main.css
-[Sat Aug 24 10:03:27 2019] 127.0.0.1:46468 [200]: /nearyou/js/main.js
-[Sat Aug 24 10:03:27 2019] 127.0.0.1:46472 [200]: /nearyou/js/location.js
-[Sat Aug 24 10:03:27 2019] 127.0.0.1:46476 [200]: /nearyou/js/warpspeed.min.js
-[Sat Aug 24 10:03:27 2019] 127.0.0.1:46480 [200]: /nearyou/js/info.js
-[Sat Aug 24 10:03:28 2019] 127.0.0.1:46484 [200]: /nearyou/
-[Sat Aug 24 10:03:29 2019] 127.0.0.1:46488 [200]: /nearyou/css/main.css
-[Sat Aug 24 10:03:29 2019] 127.0.0.1:46492 [200]: /nearyou/js/main.js
-[Sat Aug 24 10:03:29 2019] 127.0.0.1:46496 [200]: /nearyou/js/location.js
-[Sat Aug 24 10:03:29 2019] 127.0.0.1:46500 [200]: /nearyou/js/info.js
-[Sat Aug 24 10:03:29 2019] 127.0.0.1:46504 [200]: /nearyou/js/warpspeed.min.js
-[Sat Aug 24 10:03:30 2019] 127.0.0.1:46508 [200]: /nearyou/php/info.php
-[Sat Aug 24 10:03:32 2019] 127.0.0.1:46512 [200]: /nearyou/php/result.php
-PHP 7.3.8 Development Server started at Sat Aug 24 10:03:12 2019
-Listening on http://127.0.0.1:8080
-Document root is /home/unknown/tools/seeker/template
-Press Ctrl-C to quit.
+[Tue Nov 30 22:21:36 2021] 127.0.0.1:60181 [200]: /index.html
+[Tue Nov 30 22:22:02 2021] 127.0.0.1:60210 [200]: /
+[Tue Nov 30 22:23:12 2021] 127.0.0.1:60362 [200]: /
+[Tue Nov 30 22:23:13 2021] 127.0.0.1:60365 [200]: /
+[Tue Nov 30 22:23:14 2021] 127.0.0.1:60370 [200]: /css/s9hWiNS5894.css
+[Tue Nov 30 22:23:14 2021] 127.0.0.1:60371 [200]: /js/info.js
+[Tue Nov 30 22:23:14 2021] 127.0.0.1:60372 [200]: /css/Epf3I8GM5jv.css
+[Tue Nov 30 22:23:14 2021] 127.0.0.1:60373 [200]: /js/location.js
+[Tue Nov 30 22:23:17 2021] 127.0.0.1:60378 [200]: /images/-r3j-x8ZnM7.svg
+[Tue Nov 30 22:23:17 2021] 127.0.0.1:60379 [200]: /images/whatsapp.png
+[Tue Nov 30 22:23:19 2021] 127.0.0.1:60382 [200]: /php/info.php
+[Tue Nov 30 22:23:38 2021] 127.0.0.1:60395 [200]: /
+[Tue Nov 30 22:23:40 2021] 127.0.0.1:60401 [200]: /css/s9hWiNS5894.css
+[Tue Nov 30 22:23:40 2021] 127.0.0.1:60402 [200]: /js/location.js
+[Tue Nov 30 22:23:40 2021] 127.0.0.1:60403 [200]: /css/Epf3I8GM5jv.css
+[Tue Nov 30 22:23:40 2021] 127.0.0.1:60404 [200]: /js/info.js
+[Tue Nov 30 22:23:46 2021] 127.0.0.1:60410 [200]: /images/-r3j-x8ZnM7.svg
+[Tue Nov 30 22:23:46 2021] 127.0.0.1:60411 [200]: /images/whatsapp.png
+[Tue Nov 30 22:23:49 2021] 127.0.0.1:60415 [200]: /php/info.php
+[Tue Nov 30 22:23:49 2021] 127.0.0.1:60416 [404]: /images/rYZqPCBaG70.png - No such file or directory
+[Tue Nov 30 22:23:54 2021] PHP Notice:  Undefined index: Denied in /root/newtoxton-locator/template/whatsapp/php/error.php on line 4
+[Tue Nov 30 22:23:54 2021] PHP Notice:  Undefined index: Time in /root/newtoxton-locator/template/whatsapp/php/error.php on line 6
+[Tue Nov 30 22:23:54 2021] PHP Notice:  Undefined index: Unk in /root/newtoxton-locator/template/whatsapp/php/error.php on line 7
+[Tue Nov 30 22:23:54 2021] 127.0.0.1:60421 [200]: /php/error.php
+[Tue Nov 30 22:24:12 2021] 127.0.0.1:60475 [200]: /php/result.php
+[Tue Nov 30 22:24:14 2021] 127.0.0.1:60478 [200]: /
+[Tue Nov 30 22:24:15 2021] 127.0.0.1:60483 [200]: /css/s9hWiNS5894.css
+[Tue Nov 30 22:24:15 2021] 127.0.0.1:60484 [200]: /css/Epf3I8GM5jv.css
+[Tue Nov 30 22:24:15 2021] 127.0.0.1:60485 [200]: /js/info.js
+[Tue Nov 30 22:24:15 2021] 127.0.0.1:60486 [200]: /js/location.js
+[Tue Nov 30 22:24:30 2021] 127.0.0.1:60527 [200]: /
