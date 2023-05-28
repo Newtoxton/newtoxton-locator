@@ -10,7 +10,7 @@
 </p>
 
 
-Concept behind Newtoxton-locator is simple, just like we host phishing pages to get credentials why not host a fake page that requests your location like many popular location based websites. Read more on <a href="https://github.com/Newtoxton"> newtoxton's Blog </a>.Seeker Hosts a fake website which asks for Location Permission and if the target allows it, we can get :
+Concept behind Newtoxton-locator is simple, just like we host phishing pages to get credentials why not host a fake page that requests your location like many popular location based websites. Read more on <a href="https://github.com/Newtoxton"> newtoxton's Blog </a>.Newtoxton-locator Hosts a fake website which asks for Location Permission and if the target allows it, we can get :
 
 * Longitude
 * Latitude
