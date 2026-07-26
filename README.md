@@ -1,4 +1,5 @@
-<p align="center"><img src="https://newtoxton.com/wp-content/uploads/2021/10/logo.png"></p>
+<img width="1536" height="1024" alt="locator_app" src="https://github.com/user-attachments/assets/4ddce901-1589-400b-b285-5878195d22c0" />
+
 
 <p align="center">
 <img src="https://img.shields.io/badge/Python-3-brightgreen.svg?style=plastic">
